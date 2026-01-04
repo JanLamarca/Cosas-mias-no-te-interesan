@@ -19,7 +19,7 @@ PIN_LOGIN = st.secrets.get("credentials", {}).get("pin", "1119")
 
 # --- AUTH & CONNECTION ---
 def get_connection():
-    """Establishes connection to Google Sheets."""
+    """Establishes connection to Google Sheets with robust key cleaning."""
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -28,12 +28,23 @@ def get_connection():
     try:
         # Prioridad 1: Streamlit Secrets (Para Cloud)
         if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            # CORRECCIÓN DE KEY: Streamlit a veces escapa mal los saltos de línea
+            # Creamos una copia real para no mutar el objeto original de Streamlit
+            creds_dict = {}
+            for key in st.secrets["gcp_service_account"]:
+                creds_dict[key] = st.secrets["gcp_service_account"][key]
+            
+            # LIMPIEZA TOTAL DE LA CLAVE
             if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+                pk = creds_dict["private_key"]
+                # Caso A: Viene con \n literales (texto)
+                pk = pk.replace("\\n", "\n")
+                # Caso B: Viene con saltos de línea físicos (triple comilla)
+                # Google requiere que los saltos de línea existan.
+                # Aseguramos que los bordes estén limpios
+                creds_dict["private_key"] = pk.strip()
             
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            
         # Prioridad 2: Archivo local key.json (Para local)
         elif os.path.exists("key.json"):
             creds = Credentials.from_service_account_file("key.json", scopes=scope)

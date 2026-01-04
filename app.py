@@ -174,30 +174,32 @@ if client:
 
         st.divider()
 
-        # 3. NEW TRANSACTION FORM
-        st.subheader("Nuevo Movimiento")
+        # 3. SELECCIÓN DE CUENTA (Botones grandes tipo Web App)
+        st.subheader("📍 ¿Qué cuenta vas a usar?")
+        source_choice = st.segmented_control(
+            "Selecciona cuenta:", 
+            ["Cartera", "Diners"], 
+            default="Cartera",
+            selection_mode="single",
+            key="main_source_selector"
+        )
         
-        with st.form("transaction_form"):
-            type_choice = st.radio("Tipo:", ["Gasto 📤", "Ingreso 📥"], horizontal=True)
-            source_choice = st.radio("Cuenta afectada:", ["Cartera", "Diners"], horizontal=True)
+        st.divider()
+
+        # 4. FORMULARIO DE MOVIMIENTO
+        st.subheader(f"📝 Registro en {source_choice}")
+        
+        with st.form("transaction_form", clear_on_submit=True):
+            type_choice = st.radio("Tipo de movimiento:", ["Gasto 📤", "Ingreso 📥"], horizontal=True)
             
-            amount = st.number_input("Cantidad (€):", min_value=0.01, format="%.2f", step=0.50)
-            notes = st.text_input("Concepto / Notas:")
+            amount = st.number_input("Cantidad total (€):", min_value=0.01, format="%.2f", step=0.50)
+            notes = st.text_input("Concepto / Notas:", placeholder="Ej: Comida, Sueldo, Regalo...")
             
-            # Smart Denomination Selector
             st.markdown("---")
-            st.caption("Detalles del efectivo (Opcional - Actualiza stock)")
+            st.markdown("### 🪙 Actualizar Stock (Billetes/Monedas)")
+            update_stock = st.toggle("¿Quieres ajustar el recuento de monedas?", value=True)
             
-            # Logic: If spending 20, likely used a 20 note or 50 note.
-            # We show a multiselect or a set of counters logic? 
-            # Mobile: Counters are best. - 1 + buttons.
-            
-            update_stock = st.checkbox("Actualizar stock de billetes/monedas?", value=True)
-            
-            # We create a simplified input mechanism.
-            # We list the denominations available in the chosen source.
             active_df = df_cartera if source_choice == "Cartera" else df_diners
-            
             changes = {} # Store user inputs for changes
             
             if update_stock:

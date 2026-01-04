@@ -19,7 +19,7 @@ PIN_LOGIN = st.secrets.get("credentials", {}).get("pin", "1119")
 
 # --- AUTH & CONNECTION ---
 def get_connection():
-    """Establishes connection to Google Sheets with robust key cleaning."""
+    """Establishes connection to Google Sheets with ultra-robust key cleaning."""
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -33,15 +33,22 @@ def get_connection():
             for key in st.secrets["gcp_service_account"]:
                 creds_dict[key] = st.secrets["gcp_service_account"][key]
             
-            # LIMPIEZA TOTAL DE LA CLAVE
+            # LIMPIEZA TOTAL Y AGRESIVA DE LA CLAVE
             if "private_key" in creds_dict:
                 pk = creds_dict["private_key"]
-                # Caso A: Viene con \n literales (texto)
+                
+                # 1. Normalizar saltos de línea (convertir \n texto a salto real)
                 pk = pk.replace("\\n", "\n")
-                # Caso B: Viene con saltos de línea físicos (triple comilla)
-                # Google requiere que los saltos de línea existan.
-                # Aseguramos que los bordes estén limpios
-                creds_dict["private_key"] = pk.strip()
+                
+                # 2. Limpiar cada línea individualmente y reconstruir
+                lines = pk.splitlines()
+                clean_lines = []
+                for line in lines:
+                    clean_line = line.strip()
+                    if clean_line:
+                        clean_lines.append(clean_line)
+                
+                creds_dict["private_key"] = "\n".join(clean_lines)
             
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             

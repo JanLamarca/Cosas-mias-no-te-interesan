@@ -29,12 +29,15 @@ def get_connection():
         # Prioridad 1: Streamlit Secrets (Para Cloud)
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
+            # CORRECCIÓN DE KEY: Streamlit a veces escapa mal los saltos de línea
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         # Prioridad 2: Archivo local key.json (Para local)
         elif os.path.exists("key.json"):
             creds = Credentials.from_service_account_file("key.json", scopes=scope)
         else:
-            st.error("⚠️ No se encuentran credenciales (ni key.json ni secrets).")
             return None
 
         client = gspread.authorize(creds)

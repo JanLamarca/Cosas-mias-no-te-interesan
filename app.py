@@ -9,7 +9,7 @@ import datetime
 SHEET_NAME = "Gestión Financiera"  # Name of your Google Sheet file
 SHEET_CARTERA = "Cartera"
 SHEET_DINERS = "Diners"
-SHEET_HISTORY = "Historial"
+SHEET_HISTORY = "Historial" # Nombre de la pestaña
 
 # --- LOGIN CONFIG ---
 # Se recomienda usar Streamlit Secrets en la nube. 
@@ -19,7 +19,7 @@ PIN_LOGIN = st.secrets.get("credentials", {}).get("pin", "1119")
 
 # --- AUTH & CONNECTION ---
 def get_connection():
-    """Establishes connection to Google Sheets with ultra-robust key cleaning."""
+    """Establishes connection to Google Sheets with robust key cleaning."""
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -29,26 +29,13 @@ def get_connection():
         # Prioridad 1: Streamlit Secrets (Para Cloud)
         if "gcp_service_account" in st.secrets:
             # Creamos una copia real para no mutar el objeto original de Streamlit
-            creds_dict = {}
-            for key in st.secrets["gcp_service_account"]:
-                creds_dict[key] = st.secrets["gcp_service_account"][key]
+            creds_dict = {k: st.secrets["gcp_service_account"][k] for k in st.secrets["gcp_service_account"]}
             
             # LIMPIEZA TOTAL Y AGRESIVA DE LA CLAVE
             if "private_key" in creds_dict:
-                pk = creds_dict["private_key"]
-                
-                # 1. Normalizar saltos de línea (convertir \n texto a salto real)
-                pk = pk.replace("\\n", "\n")
-                
-                # 2. Limpiar cada línea individualmente y reconstruir
-                lines = pk.splitlines()
-                clean_lines = []
-                for line in lines:
-                    clean_line = line.strip()
-                    if clean_line:
-                        clean_lines.append(clean_line)
-                
-                creds_dict["private_key"] = "\n".join(clean_lines)
+                pk = creds_dict["private_key"].replace("\\n", "\n")
+                lines = [l.strip() for l in pk.splitlines() if l.strip()]
+                creds_dict["private_key"] = "\n".join(lines)
             
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             
@@ -88,23 +75,17 @@ def login():
         return False
     return True
 
-# --- INICIO APP ---
-if not login():
-    st.stop()
-
 # --- HELPER FUNCTIONS ---
 def parse_euro(value_str):
     """Converts '1.000,50 €' string to 1000.50 float."""
-    if not isinstance(value_str, str):
-        return float(value_str or 0)
+    if not isinstance(value_str, str): return float(value_str or 0)
     clean = value_str.replace("€", "").replace(".", "").replace(",", ".").strip()
-    try:
-        return float(clean)
-    except ValueError:
-        return 0.0
+    try: return float(clean)
+    except ValueError: return 0.0
 
 def format_euro(value_float):
     """Converts 1000.50 float to '1.000,50 €' string."""
+    if value_float is None: return "-"
     return "{:,.2f} €".format(value_float).replace(",", "X").replace(".", ",").replace("X", ".")
 
 def get_data(client, worksheet_name):
@@ -113,53 +94,42 @@ def get_data(client, worksheet_name):
         sh = client.open(SHEET_NAME)
         ws = sh.worksheet(worksheet_name)
         data = ws.get_all_values()
+        if not data: return None, ws
         df = pd.DataFrame(data[1:], columns=data[0]) # Assume first row is header
         return df, ws
     except Exception as e:
-        st.error(f"No se pudo leer la hoja '{worksheet_name}'. Error: {e}")
+        st.error(f"Error leyendo '{worksheet_name}': {e}")
         return None, None
 
-def update_history(client, date_str, amount, notes, total_cartera):
-    """Appends a row to the history sheet."""
+def update_history(client, date_str, preu, pagat, canvi, notes, balance):
+    """Adds a row to the history sheet."""
     try:
         sh = client.open(SHEET_NAME)
         
         # Intentar encontrar la hoja de historial de forma más flexible
-        all_worksheets = [w.title for w in sh.worksheets()]
+        all_ws = [w.title for w in sh.worksheets()]
+        target = SHEET_HISTORY if SHEET_HISTORY in all_ws else None
+        if not target:
+            for t in all_ws:
+                if "Historial" in t or ("Gastos" in t and "Ingresos" in t):
+                    target = t; break
         
-        # Si no existe tal cual, buscamos una que contenga "Gastos" e "Ingresos"
-        matched_ws = None
-        if SHEET_HISTORY in all_worksheets:
-            matched_ws = SHEET_HISTORY
-        else:
-            for title in all_worksheets:
-                if "Gastos" in title and ("Ingresos" in title or "Ingresso" in title):
-                    matched_ws = title
-                    break
-        
-        if not matched_ws:
-            st.error(f"❌ No se encontró la pestaña de historial.")
-            st.info(f"Pestañas disponibles: {', '.join(all_worksheets)}")
-            st.warning(f"Asegúrate de que una pestaña se llame exactamente '{SHEET_HISTORY}'")
+        if not target:
+            st.error("No se encontró la pestaña de historial.")
             return
 
-        ws = sh.worksheet(matched_ws)
+        ws = sh.worksheet(target)
         
-        # Columns: Data, Preu/Afegit, Pagat, Canvi rebut, Total Cartera, Notes
-        row = [
-            date_str, 
-            format_euro(amount), 
-            "-", 
-            "-", 
-            format_euro(total_cartera), 
-            notes
-        ]
+        # Columns: Data, Preu/Afegit, Pagat, Canvi rebut, Total Cartera/Guardiola, Notes
+        row = [date_str, format_euro(preu), format_euro(pagat) if pagat else "-", format_euro(canvi) if canvi else "-", format_euro(balance), notes]
         ws.append_row(row)
-        st.toast("✅ Historial actualizado en la hoja de cálculo")
+        st.toast("✅ Historial actualizado")
     except Exception as e:
-        st.error(f"Error escribiendo historial en '{matched_ws if matched_ws else SHEET_HISTORY}': {e}")
+        st.error(f"Error historial: {e}")
 
 # --- APP LOGIC ---
+if not login(): st.stop()
+
 client = get_connection()
 
 if client:
@@ -176,30 +146,23 @@ if client:
         # But 'Total' column in sheet might be a formula or static text.
         # We recalculate for display to be safe.
         
-        def calculate_total_from_df(df):
-            total = 0.0
-            for index, row in df.iterrows():
-                val = parse_euro(row['Monedes'])
-                qty = int(row['Quantes?']) if str(row['Quantes?']).isdigit() else 0
-                total += val * qty
-            return total
+        def calc_total(df):
+            return sum(parse_euro(r['Monedes']) * (int(r['Quantes?']) if str(r['Quantes?']).isdigit() else 0) for _, r in df.iterrows())
 
-        total_cartera = calculate_total_from_df(df_cartera)
-        total_diners = calculate_total_from_df(df_diners)
-        grand_total = total_cartera + total_diners
-
-        # 2. DISPLAY TOTALS (Hero Section)
-        col1, col2 = st.columns(2)
-        col1.metric("Cartera (Diario)", format_euro(total_cartera))
-        col2.metric("Diners (Ahorro)", format_euro(total_diners))
-        st.caption(f"Total Global: {format_euro(grand_total)}")
+        total_c = calc_total(df_cartera)
+        total_d = calc_total(df_diners)
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Cartera", format_euro(total_c))
+        c2.metric("Diners (Ahorros)", format_euro(total_d))
+        st.caption(f"Salto Total: {format_euro(total_c + total_d)}")
 
         st.divider()
 
         # 3. SELECCIÓN DE CUENTA (Botones grandes tipo Web App)
-        st.subheader("📍 ¿Qué cuenta vas a usar?")
-        source_choice = st.segmented_control(
-            "Selecciona cuenta:", 
+        st.subheader("📍 ¿De dónde sale/entra el dinero?")
+        source = st.segmented_control(
+            "Cuenta:", 
             ["Cartera", "Diners"], 
             default="Cartera",
             selection_mode="single",
@@ -209,124 +172,115 @@ if client:
         st.divider()
 
         # 4. FORMULARIO DE MOVIMIENTO
-        st.subheader(f"📝 Registro en {source_choice}")
+        st.subheader(f"📝 Registro en {source}")
         
-        with st.form("transaction_form", clear_on_submit=False):
-            type_choice = st.radio("Tipo de movimiento:", ["Gasto 📤", "Ingreso 📥"], horizontal=True)
+        with st.form("main_form", clear_on_submit=False):
+            t_type = st.radio("Tipo:", ["Gasto 📤", "Ingreso 📥"], horizontal=True)
             
-            st.info("💡 Consejo: Si marcas los billetes abajo y dejas la cantidad en 0, se calculará automáticamente el total.")
-            amount = st.number_input("Cantidad total (€):", min_value=0.0, format="%.2f", step=0.50, value=0.0)
-            notes = st.text_input("Concepto / Notas:", placeholder="Ej: Comida, Sueldo, Regalo...")
+            col_a, col_b = st.columns(2)
+            amount = col_a.number_input("Importe (€):", min_value=0.0, format="%.2f", step=0.01, value=0.0)
+            pagat = col_b.number_input("Pagado con (€) [Opcional]:", min_value=0.0, format="%.2f", step=0.01, value=0.0)
+            
+            notes = st.text_input("Concepto:", placeholder="Ej: Supermercado...")
             
             st.markdown("---")
-            st.markdown("### 🪙 Desglose de billetes/monedas")
-            update_stock = st.toggle("¿Actualizar stock?", value=True)
+            st.markdown("### 🪙 Monedas y Billetes")
+            st.caption("Si pones el Importe en 0, se calculará sumando lo que marques aquí.")
             
-            active_df = df_cartera if source_choice == "Cartera" else df_diners
+            active_df = df_cartera if source == "Cartera" else df_diners
             changes = {}
             
             # Preparar denominaciones (ordenadas de mayor a menor)
             denoms = []
-            for idx, row in active_df.iterrows():
-                denoms.append((idx, parse_euro(row['Monedes']), row['Monedes']))
+            for idx, r in active_df.iterrows():
+                denoms.append((idx, parse_euro(r['Monedes']), r['Monedes']))
             denoms.sort(key=lambda x: x[1], reverse=True)
 
-            if update_stock:
-                # Layout de rejilla para móvil con botones + y - nativos de Streamlit
-                cols = st.columns(3)
-                for i, (idx, val_float, val_str) in enumerate(denoms):
-                    if val_str == "???" or not val_str: continue
-                    with cols[i % 3]:
-                        change_val = st.number_input(
-                            f"{val_str}", 
-                            min_value=-20, 
-                            max_value=20, 
-                            step=1, 
-                            value=0,
-                            key=f"denom_{source_choice}_{idx}"
-                        )
-                        if change_val != 0:
-                            changes[idx] = change_val
+            # Layout de rejilla para móvil con botones + y - nativos de Streamlit
+            cols = st.columns(3)
+            for i, (idx, val, txt) in enumerate(denoms):
+                if not txt or txt == "???": continue
+                with cols[i % 3]:
+                    c_val = st.number_input(
+                        f"{txt}", 
+                        min_value=-50, 
+                        max_value=50, 
+                        step=1, 
+                        value=0,
+                        key=f"d_{source}_{idx}"
+                    )
+                    if c_val != 0:
+                        changes[idx] = c_val
 
-            submitted = st.form_submit_button("Registrar Movimiento 🚀", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("REGISTRAR MOVIMIENTO 🚀", use_container_width=True, type="primary")
 
             if submitted:
                 # Calcular total desde el desglose si la cantidad es 0
-                calc_total = 0.0
+                calc_val_sum = 0.0
                 for idx, delta in changes.items():
-                    val = parse_euro(active_df.at[idx, 'Monedes'])
-                    calc_total += abs(val * delta) # Usamos valor absoluto para el cálculo del total
+                    denom_val = parse_euro(active_df.at[idx, 'Monedes'])
+                    calc_val_sum += denom_val * abs(delta)
                 
-                final_amount = amount
-                if amount == 0 and calc_total > 0:
-                    final_amount = calc_total
-                    st.toast(f"✅ Total calculado: {format_euro(final_amount)}")
+                final_amt = amount
+                if amount == 0 and calc_val_sum > 0:
+                    final_amt = calc_val_sum
+                    st.toast(f"✅ Total calculado: {format_euro(final_amt)}")
                 
-                if final_amount <= 0:
-                    st.error("Error: Introduce una cantidad o selecciona billetes.")
+                is_exp = "Gasto" in t_type
+                
+                if final_amt <= 0:
+                    st.error("Error: Introduce un importe o selecciona billetes.")
                 else:
                     # Lógica de registro
-                    is_expense = "Gasto" in type_choice
-                    signed_amount = -final_amount if is_expense else final_amount
                     
                     # 1. Update CSV/Sheet Logic
-                    # We need to update the specific cell in the sheet.
-                    # 'changes' dict contains {row_index: delta}
-                    
-                    target_ws = ws_cartera if source_choice == "Cartera" else ws_diners
-                    target_df = df_cartera if source_choice == "Cartera" else df_diners
-                    
-                    # Batch update list
-                    # gspread logic: cell(row, col). Row is 1-indexed. Header is row 1. Data starts row 2.
-                    # iterrows index is 0-based relative to df. 
-                    # So Sheet Row = index + 2.
-                    
-                    # If user didn't specify breakdown but chose "Update Stock", 
-                    # we could implement greedy algo here? 
-                    # User requested: "program must update automatically... subtracting 1... if possible".
-                    # If user enters changes manually, we trust them.
-                    # If 'changes' is empty but amount > 0, we can try to guess or just warn.
-                    
-                    if update_stock and not changes:
-                        st.warning("No indicaste qué billetes cambiaron. Se registrará el historial pero no el stock de monedas.")
-                        # Proceed anyway? Or stop? Proceeding is safer for UX, just History log.
-                    
-                    final_stock_delta = 0.0
+                    current_ws = ws_cartera if source == "Cartera" else ws_diners
+                    current_df = df_cartera if source == "Cartera" else df_diners
                     
                     if changes:
                         # Process updates
                         for idx, delta in changes.items():
                             # INTUICIÓN: En un GASTO, poner '1' significa que quitas 1 billete.
                             # En un INGRESO, poner '1' significa que añades 1 billete.
-                            actual_delta = -delta if is_expense else delta
+                            real_delta = -delta if is_exp else delta
                             
                             # Calculate new quantity
-                            current_qty = int(target_df.at[idx, 'Quantes?'])
-                            new_qty = current_qty + actual_delta
+                            current_qty = int(current_df.at[idx, 'Quantes?'])
+                            new_q = current_qty + real_delta
                             
                             # Validation
-                            if new_qty < 0:
-                                st.error(f"Error: No tienes suficientes {target_df.at[idx, 'Monedes']}")
+                            if new_q < 0:
+                                st.error(f"Error: No tienes suficientes {current_df.at[idx, 'Monedes']}")
                                 st.stop()
                                 
-                            # Update Sheet
-                            target_ws.update_cell(idx + 2, 2, new_qty)
-                            
-                            # Calculate how much money actually moved based on counts
-                            mon_val = parse_euro(target_df.at[idx, 'Monedes'])
-                            final_stock_delta += (mon_val * actual_delta)
+                            # Update quantity (Col 2)
+                            current_ws.update_cell(idx + 2, 2, new_q)
+                            # Update Total (Col 3)
+                            s_total = parse_euro(current_df.at[idx, 'Monedes']) * new_q
+                            current_ws.update_cell(idx + 2, 3, format_euro(s_total))
 
-                        st.success(f"Stock actualizado. (Delta calculado: {format_euro(final_stock_delta)})")
+                        st.success(f"Stock actualizado.")
+                    elif amount == 0: # If no amount and no changes, it's an error
+                        st.error("No se ha especificado un importe ni cambios en el stock.")
+                        st.stop()
                     
                     # 2. Update History
                     # We use the calculated total_cartera AFTER the change? Or before?
                     # Usually After.
-                    new_total_cartera = total_cartera + (signed_amount if source_choice == "Cartera" else 0)
+                    current_balance = total_c if source == "Cartera" else total_d
+                    new_val = current_balance + (-final_amt if is_exp else final_amt)
                     
-                    today = datetime.datetime.now().strftime("%d/%m/%y")
-                    update_history(client, today, signed_amount, notes, new_total_cartera)
+                    canvi = None
+                    if pagat > 0 and is_exp:
+                        canvi = pagat - final_amt
+                        if canvi < 0:
+                            st.warning(f"El pago ({format_euro(pagat)}) es menor que el importe ({format_euro(final_amt)}).")
                     
-                    st.success("Movimiento registrado correctamente!")
-                    st.balloons()
+                    update_history(client, datetime.datetime.now().strftime("%d/%m/%y"), 
+                                   -final_amt if is_exp else final_amt,
+                                   pagat if pagat > 0 else None,
+                                   canvi, notes, new_val)
+                    st.success("¡Hecho! Recargando...")
+                    st.rerun()
 else:
-    st.info("Configurando conexión...")
+    st.info("Conectando con Google Sheets...")

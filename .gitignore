@@ -1,0 +1,6 @@
+# Evitar que las credenciales locales se suban a GitHub
+key.json
+.streamlit/
+__pycache__/
+*.csv
+*.xlsx

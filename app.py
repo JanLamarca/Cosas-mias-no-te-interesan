@@ -9,7 +9,7 @@ import datetime
 SHEET_NAME = "Gestión Financiera"  # Name of your Google Sheet file
 SHEET_CARTERA = "Cartera"
 SHEET_DINERS = "Diners"
-SHEET_HISTORY = "Gastos_Ingresos"
+SHEET_HISTORY = "Gastos/Ingresos"
 
 # --- LOGIN CONFIG ---
 # Se recomienda usar Streamlit Secrets en la nube. 
@@ -135,7 +135,7 @@ def update_history(client, date_str, amount, notes, total_cartera):
         ]
         ws.append_row(row)
     except Exception as e:
-        st.error(f"Error escribiendo historial: {e}")
+        st.error(f"Error escribiendo historial: '{SHEET_HISTORY}' no encontrado o inaccesible. Revisa el nombre de la pestaña en Google Sheets. Error: {e}")
 
 # --- APP LOGIC ---
 client = get_connection()
@@ -189,57 +189,63 @@ if client:
         # 4. FORMULARIO DE MOVIMIENTO
         st.subheader(f"📝 Registro en {source_choice}")
         
-        with st.form("transaction_form", clear_on_submit=True):
+        with st.form("transaction_form", clear_on_submit=False):
             type_choice = st.radio("Tipo de movimiento:", ["Gasto 📤", "Ingreso 📥"], horizontal=True)
             
-            amount = st.number_input("Cantidad total (€):", min_value=0.01, format="%.2f", step=0.50)
+            st.info("💡 Consejo: Si marcas los billetes abajo y dejas la cantidad en 0, se calculará automáticamente el total.")
+            amount = st.number_input("Cantidad total (€):", min_value=0.0, format="%.2f", step=0.50, value=0.0)
             notes = st.text_input("Concepto / Notas:", placeholder="Ej: Comida, Sueldo, Regalo...")
             
             st.markdown("---")
-            st.markdown("### 🪙 Actualizar Stock (Billetes/Monedas)")
-            update_stock = st.toggle("¿Quieres ajustar el recuento de monedas?", value=True)
+            st.markdown("### 🪙 Desglose de billetes/monedas")
+            update_stock = st.toggle("¿Actualizar stock?", value=True)
             
             active_df = df_cartera if source_choice == "Cartera" else df_diners
-            changes = {} # Store user inputs for changes
+            changes = {}
             
-            if update_stock:
-                st.write("Indica qué billetes/monedas cambian:")
-                # Filter useful denominations (don't show 0.01 if they have none? keep all for consistency)
-                # To save space, maybe a dropdown to add a change record? "Add 1x 50€"
-                # For mobile, a simple expader with number inputs is reliable.
-                with st.expander("Desglose de efectivo"):
-                    # Sort desc
-                    denoms = []
-                    for idx, row in active_df.iterrows():
-                         denoms.append((idx, parse_euro(row['Monedes']), row['Monedes']))
-                    
-                    denoms.sort(key=lambda x: x[1], reverse=True)
-                    
-                    cols = st.columns(3)
-                    for i, (idx, val_float, val_str) in enumerate(denoms):
-                        if val_str == "???" or not val_str: continue
-                        with cols[i % 3]:
-                            # Helper key to avoid dupes
-                            change_val = st.number_input(
-                                f"{val_str}", 
-                                min_value=-10, 
-                                max_value=10, 
-                                step=1, 
-                                value=0,
-                                key=f"denom_{source_choice}_{idx}"
-                            )
-                            if change_val != 0:
-                                changes[idx] = change_val
+            # Preparar denominaciones (ordenadas de mayor a menor)
+            denoms = []
+            for idx, row in active_df.iterrows():
+                denoms.append((idx, parse_euro(row['Monedes']), row['Monedes']))
+            denoms.sort(key=lambda x: x[1], reverse=True)
 
-            submitted = st.form_submit_button("Registrar Movimiento", use_container_width=True, type="primary")
+            if update_stock:
+                # Layout de rejilla para móvil con botones + y - nativos de Streamlit
+                cols = st.columns(3)
+                for i, (idx, val_float, val_str) in enumerate(denoms):
+                    if val_str == "???" or not val_str: continue
+                    with cols[i % 3]:
+                        change_val = st.number_input(
+                            f"{val_str}", 
+                            min_value=-20, 
+                            max_value=20, 
+                            step=1, 
+                            value=0,
+                            key=f"denom_{source_choice}_{idx}"
+                        )
+                        if change_val != 0:
+                            changes[idx] = change_val
+
+            submitted = st.form_submit_button("Registrar Movimiento 🚀", use_container_width=True, type="primary")
 
             if submitted:
-                if amount <= 0:
-                    st.error("La cantidad debe ser mayor a 0.")
+                # Calcular total desde el desglose si la cantidad es 0
+                calc_total = 0.0
+                for idx, delta in changes.items():
+                    val = parse_euro(active_df.at[idx, 'Monedes'])
+                    calc_total += abs(val * delta) # Usamos valor absoluto para el cálculo del total
+                
+                final_amount = amount
+                if amount == 0 and calc_total > 0:
+                    final_amount = calc_total
+                    st.toast(f"✅ Total calculado: {format_euro(final_amount)}")
+                
+                if final_amount <= 0:
+                    st.error("Error: Introduce una cantidad o selecciona billetes.")
                 else:
-                    # Logic
+                    # Lógica de registro
                     is_expense = "Gasto" in type_choice
-                    signed_amount = -amount if is_expense else amount
+                    signed_amount = -final_amount if is_expense else final_amount
                     
                     # 1. Update CSV/Sheet Logic
                     # We need to update the specific cell in the sheet.

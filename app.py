@@ -123,7 +123,28 @@ def update_history(client, date_str, amount, notes, total_cartera):
     """Appends a row to the history sheet."""
     try:
         sh = client.open(SHEET_NAME)
-        ws = sh.worksheet(SHEET_HISTORY)
+        
+        # Intentar encontrar la hoja de historial de forma más flexible
+        all_worksheets = [w.title for w in sh.worksheets()]
+        
+        # Si no existe tal cual, buscamos una que contenga "Gastos" e "Ingresos"
+        matched_ws = None
+        if SHEET_HISTORY in all_worksheets:
+            matched_ws = SHEET_HISTORY
+        else:
+            for title in all_worksheets:
+                if "Gastos" in title and ("Ingresos" in title or "Ingresso" in title):
+                    matched_ws = title
+                    break
+        
+        if not matched_ws:
+            st.error(f"❌ No se encontró la pestaña de historial.")
+            st.info(f"Pestañas disponibles: {', '.join(all_worksheets)}")
+            st.warning(f"Asegúrate de que una pestaña se llame exactamente '{SHEET_HISTORY}'")
+            return
+
+        ws = sh.worksheet(matched_ws)
+        
         # Columns: Data, Preu/Afegit, Pagat, Canvi rebut, Total Cartera, Notes
         row = [
             date_str, 
@@ -134,8 +155,9 @@ def update_history(client, date_str, amount, notes, total_cartera):
             notes
         ]
         ws.append_row(row)
+        st.toast("✅ Historial actualizado en la hoja de cálculo")
     except Exception as e:
-        st.error(f"Error escribiendo historial: '{SHEET_HISTORY}' no encontrado o inaccesible. Revisa el nombre de la pestaña en Google Sheets. Error: {e}")
+        st.error(f"Error escribiendo historial: {e}")
 
 # --- APP LOGIC ---
 client = get_connection()

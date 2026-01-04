@@ -296,9 +296,13 @@ if client:
                     if changes:
                         # Process updates
                         for idx, delta in changes.items():
+                            # INTUICIÓN: En un GASTO, poner '1' significa que quitas 1 billete.
+                            # En un INGRESO, poner '1' significa que añades 1 billete.
+                            actual_delta = -delta if is_expense else delta
+                            
                             # Calculate new quantity
                             current_qty = int(target_df.at[idx, 'Quantes?'])
-                            new_qty = current_qty + delta
+                            new_qty = current_qty + actual_delta
                             
                             # Validation
                             if new_qty < 0:
@@ -306,18 +310,11 @@ if client:
                                 st.stop()
                                 
                             # Update Sheet
-                            # Column 2 is 'Quantes?'. Row = idx + 2
                             target_ws.update_cell(idx + 2, 2, new_qty)
-                            
-                            # Update Total Column (Col 3)
-                            # val_float = parse_euro(target_df.at[idx, 'Monedes'])
-                            # new_subtotal = val_float * new_qty
-                            # target_ws.update_cell(idx + 2, 3, format_euro(new_subtotal))
-                            # Note: Updating cell by cell is slow. Ideally batch_update.
                             
                             # Calculate how much money actually moved based on counts
                             mon_val = parse_euro(target_df.at[idx, 'Monedes'])
-                            final_stock_delta += (mon_val * delta)
+                            final_stock_delta += (mon_val * actual_delta)
 
                         st.success(f"Stock actualizado. (Delta calculado: {format_euro(final_stock_delta)})")
                     

@@ -157,7 +157,7 @@ def update_history(client, date_str, amount, notes, total_cartera):
         ws.append_row(row)
         st.toast("✅ Historial actualizado en la hoja de cálculo")
     except Exception as e:
-        st.error(f"Error escribiendo historial: {e}")
+        st.error(f"Error escribiendo historial en '{matched_ws if matched_ws else SHEET_HISTORY}': {e}")
 
 # --- APP LOGIC ---
 client = get_connection()

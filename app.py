@@ -9,7 +9,7 @@ import datetime
 SHEET_NAME = "Gestión Financiera"  # Name of your Google Sheet file
 SHEET_CARTERA = "Cartera"
 SHEET_DINERS = "Diners"
-SHEET_HISTORY = "Gastos/Ingresos"
+SHEET_HISTORY = "Historial"
 
 # --- LOGIN CONFIG ---
 # Se recomienda usar Streamlit Secrets en la nube. 

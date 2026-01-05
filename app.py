@@ -14,8 +14,6 @@ SHEET_HISTORY = "Historial" # Nombre de la pestaña
 # --- LOGIN CONFIG ---
 # Se recomienda usar Streamlit Secrets en la nube. 
 # Si no existen, usa estos valores por defecto (solo para pruebas locales).
-USER_LOGIN = st.secrets.get("credentials", {}).get("user", "Janiito")
-PIN_LOGIN = st.secrets.get("credentials", {}).get("pin", "1119")
 
 # --- AUTH & CONNECTION ---
 def get_connection():
@@ -284,3 +282,4 @@ if client:
                     st.rerun()
 else:
     st.info("Conectando con Google Sheets...")
+

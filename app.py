@@ -9,8 +9,8 @@ import streamlit as st
 
 import streamlit as st
 
-USER_LOGIN = st.secrets["Jan Lamarca"]["user"]
-PIN_LOGIN = st.secrets["1234"]["pin"]
+USER_LOGIN = st.secrets["login"]["user"]
+PIN_LOGIN = st.secrets["login"]["pin"]
 
 # --- CONFIG ---
 SHEET_NAME = "Gestión Financiera"  # Name of your Google Sheet file
@@ -289,6 +289,7 @@ if client:
                     st.rerun()
 else:
     st.info("Conectando con Google Sheets...")
+
 
 
 

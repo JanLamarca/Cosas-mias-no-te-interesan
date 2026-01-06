@@ -5,6 +5,11 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 import datetime
 
+import streamlit as st
+
+USER_LOGIN = st.secrets["credentials"]["Janiito"]
+PIN_LOGIN = st.secrets["credentials"]["1119"]
+
 # --- CONFIG ---
 SHEET_NAME = "Gestión Financiera"  # Name of your Google Sheet file
 SHEET_CARTERA = "Cartera"
@@ -282,4 +287,5 @@ if client:
                     st.rerun()
 else:
     st.info("Conectando con Google Sheets...")
+
 
